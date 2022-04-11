@@ -1,4 +1,4 @@
-module go.mau.fi/whatsmeow
+module github.com/jraylan/whatsmeow
 
 go 1.17
 

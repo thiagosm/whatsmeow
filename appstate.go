@@ -7,6 +7,9 @@
 package whatsmeow
 
 import (
+	"context"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -53,6 +56,9 @@ func (cli *Client) FetchAppState(name appstate.WAPatchName, fullSync, onlyIfNotS
 
 		mutations, newState, err := cli.appStateProc.DecodePatches(patches, state, true)
 		if err != nil {
+			if errors.Is(err, appstate.ErrKeyNotFound) {
+				go cli.requestMissingAppStateKeys(context.TODO(), patches)
+			}
 			return fmt.Errorf("failed to decode app state %s patches: %w", name, err)
 		}
 		wasFullSync := state.Version == 0 && patches.Snapshot != nil
@@ -227,4 +233,46 @@ func (cli *Client) fetchAppStatePatches(name appstate.WAPatchName, fromVersion u
 		return nil, err
 	}
 	return appstate.ParsePatchList(resp, cli.downloadExternalAppStateBlob)
+}
+
+func (cli *Client) requestMissingAppStateKeys(ctx context.Context, patches *appstate.PatchList) {
+	cli.appStateKeyRequestsLock.Lock()
+	rawKeyIDs := cli.appStateProc.GetMissingKeyIDs(patches)
+	filteredKeyIDs := make([][]byte, 0, len(rawKeyIDs))
+	now := time.Now()
+	for _, keyID := range rawKeyIDs {
+		stringKeyID := hex.EncodeToString(keyID)
+		lastRequestTime := cli.appStateKeyRequests[stringKeyID]
+		if lastRequestTime.IsZero() || lastRequestTime.Add(24*time.Hour).Before(now) {
+			cli.appStateKeyRequests[stringKeyID] = now
+			filteredKeyIDs = append(filteredKeyIDs, keyID)
+		}
+	}
+	cli.appStateKeyRequestsLock.Unlock()
+	cli.requestAppStateKeys(ctx, filteredKeyIDs)
+}
+
+func (cli *Client) requestAppStateKeys(ctx context.Context, rawKeyIDs [][]byte) {
+	keyIDs := make([]*waProto.AppStateSyncKeyId, len(rawKeyIDs))
+	debugKeyIDs := make([]string, len(rawKeyIDs))
+	for i, keyID := range rawKeyIDs {
+		keyIDs[i] = &waProto.AppStateSyncKeyId{KeyId: keyID}
+		debugKeyIDs[i] = hex.EncodeToString(keyID)
+	}
+	msg := &waProto.Message{
+		ProtocolMessage: &waProto.ProtocolMessage{
+			Type: waProto.ProtocolMessage_APP_STATE_SYNC_KEY_REQUEST.Enum(),
+			AppStateSyncKeyRequest: &waProto.AppStateSyncKeyRequest{
+				KeyIds: keyIDs,
+			},
+		},
+	}
+	if cli.Store.ID == nil {
+		return
+	}
+	cli.Log.Infof("Sending key request for app state keys %+v", debugKeyIDs)
+	_, err := cli.SendMessage(ctx, cli.Store.ID.ToNonAD(), "", msg)
+	if err != nil {
+		cli.Log.Warnf("Failed to send app state key request: %v", err)
+	}
 }

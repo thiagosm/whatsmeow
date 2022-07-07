@@ -15,10 +15,11 @@ import (
 
 // Miscellaneous errors
 var (
-	ErrNoSession    = errors.New("can't encrypt message for device: no signal session established")
-	ErrIQTimedOut   = errors.New("info query timed out")
-	ErrNotConnected = errors.New("websocket not connected")
-	ErrNotLoggedIn  = errors.New("the store doesn't contain a device JID")
+	ErrNoSession       = errors.New("can't encrypt message for device: no signal session established")
+	ErrIQTimedOut      = errors.New("info query timed out")
+	ErrNotConnected    = errors.New("websocket not connected")
+	ErrNotLoggedIn     = errors.New("the store doesn't contain a device JID")
+	ErrMessageTimedOut = errors.New("timed out waiting for message send response")
 
 	ErrAlreadyConnected = errors.New("websocket is already connected")
 
@@ -32,6 +33,9 @@ var (
 	// ErrProfilePictureUnauthorized is returned by GetProfilePictureInfo when trying to get the profile picture of a user
 	// whose privacy settings prevent you from seeing their profile picture (status code 401).
 	ErrProfilePictureUnauthorized = errors.New("the user has hidden their profile picture from you")
+	// ErrProfilePictureNotSet is returned by GetProfilePictureInfo when the given user or group doesn't have a profile
+	// picture (status code 404).
+	ErrProfilePictureNotSet = errors.New("that user or group does not have a profile picture")
 	// ErrGroupInviteLinkUnauthorized is returned by GetGroupInviteLink if you don't have the permission to get the link (status code 401).
 	ErrGroupInviteLinkUnauthorized = errors.New("you don't have the permission to get the group's invite link")
 	// ErrNotInGroup is returned by group info getting methods if you're not in the group (status code 403).
@@ -50,11 +54,13 @@ var (
 	ErrMediaNotAvailableOnPhone = errors.New("media no longer available on phone")
 	// ErrUnknownMediaRetryError is returned by DecryptMediaRetryNotification if the given event contains an unknown error code.
 	ErrUnknownMediaRetryError = errors.New("unknown media retry error")
+	// ErrInvalidDisappearingTimer is returned by SetDisappearingTimer if the given timer is not one of the allowed values.
+	ErrInvalidDisappearingTimer = errors.New("invalid disappearing timer provided")
 )
 
 // Some errors that Client.SendMessage can return
 var (
-	ErrBroadcastListUnsupported = errors.New("sending to broadcast lists is not yet supported")
+	ErrBroadcastListUnsupported = errors.New("sending to non-status broadcast lists is not yet supported")
 	ErrUnknownServer            = errors.New("can't send message to unknown server")
 	ErrRecipientADJID           = errors.New("message recipient must be normal (non-AD) JID")
 )
@@ -104,6 +110,7 @@ type IQError struct {
 
 // Common errors returned by info queries for use with errors.Is
 var (
+	ErrIQBadRequest    error = &IQError{Code: 400, Text: "bad-request"}
 	ErrIQNotAuthorized error = &IQError{Code: 401, Text: "not-authorized"}
 	ErrIQForbidden     error = &IQError{Code: 403, Text: "forbidden"}
 	ErrIQNotFound      error = &IQError{Code: 404, Text: "item-not-found"}

@@ -88,6 +88,9 @@ type Client struct {
 	messageRetries     map[string]int
 	messageRetriesLock sync.Mutex
 
+	appStateKeyRequests     map[string]time.Time
+	appStateKeyRequestsLock sync.RWMutex
+
 	messageSendLock sync.Mutex
 
 	privacySettingsCache atomic.Value
@@ -106,10 +109,10 @@ type Client struct {
 	sessionRecreateHistoryLock sync.Mutex
 	// GetMessageForRetry is used to find the source message for handling retry receipts
 	// when the message is not found in the recently sent message cache.
-	GetMessageForRetry func(to types.JID, id types.MessageID) *waProto.Message
+	GetMessageForRetry func(requester, to types.JID, id types.MessageID) *waProto.Message
 	// PreRetryCallback is called before a retry receipt is accepted.
 	// If it returns false, the accepting will be cancelled and the retry receipt will be ignored.
-	PreRetryCallback func(receipt *events.Receipt, retryCount int, msg *waProto.Message) bool
+	PreRetryCallback func(receipt *events.Receipt, id types.MessageID, retryCount int, msg *waProto.Message) bool
 
 	// Should untrusted identity errors be handled automatically? If true, the stored identity and existing signal
 	// sessions will be removed on untrusted identity errors, and an events.IdentityChange will be dispatched.
@@ -172,7 +175,8 @@ func NewClient(deviceStore *store.Device, log waLog.Logger) *Client {
 
 		recentMessagesMap:      make(map[recentMessageKey]*waProto.Message, recentMessagesSize),
 		sessionRecreateHistory: make(map[types.JID]time.Time),
-		GetMessageForRetry:     func(to types.JID, id types.MessageID) *waProto.Message { return nil },
+		GetMessageForRetry:     func(requester, to types.JID, id types.MessageID) *waProto.Message { return nil },
+		appStateKeyRequests:    make(map[string]time.Time),
 
 		EnableAutoReconnect: true,
 		AutoTrustIdentity:   true,
@@ -356,6 +360,9 @@ func (cli *Client) IsConnected() bool {
 }
 
 // Disconnect disconnects from the WhatsApp web websocket.
+//
+// This will not emit any events, the Disconnected event is only used when the
+// connection is closed by the server or a network error.
 func (cli *Client) Disconnect() {
 	if cli.socket == nil {
 		return
@@ -378,6 +385,9 @@ func (cli *Client) unlockedDisconnect() {
 //
 // If the logout request fails, the disconnection and local data deletion will not happen either.
 // If an error is returned, but you want to force disconnect/clear data, call Client.Disconnect() and Client.Store.Delete() manually.
+//
+// Note that this will not emit any events. The LoggedOut event is only used for external logouts
+// (triggered by the user from the main device or by WhatsApp servers).
 func (cli *Client) Logout() error {
 	if cli.Store.ID == nil {
 		return ErrNotLoggedIn
@@ -560,4 +570,46 @@ func (cli *Client) dispatchEvent(evt interface{}) {
 	for _, handler := range cli.eventHandlers {
 		handler.fn(evt)
 	}
+}
+
+// ParseWebMessage parses a WebMessageInfo object into *events.Message to match what real-time messages have.
+//
+// The chat JID can be found in the Conversation data:
+//   chatJID, err := types.ParseJID(conv.GetId())
+//   for _, historyMsg := range conv.GetMessages() {
+//     evt, err := cli.ParseWebMessage(chatJID, historyMsg.GetMessage())
+//     yourNormalEventHandler(evt)
+//   }
+func (cli *Client) ParseWebMessage(chatJID types.JID, webMsg *waProto.WebMessageInfo) (*events.Message, error) {
+	info := types.MessageInfo{
+		MessageSource: types.MessageSource{
+			Chat:     chatJID,
+			IsFromMe: webMsg.GetKey().GetFromMe(),
+			IsGroup:  chatJID.Server == types.GroupServer,
+		},
+		ID:        webMsg.GetKey().GetId(),
+		PushName:  webMsg.GetPushName(),
+		Timestamp: time.Unix(int64(webMsg.GetMessageTimestamp()), 0),
+	}
+	var err error
+	if info.IsFromMe {
+		info.Sender = cli.Store.ID.ToNonAD()
+	} else if chatJID.Server == types.DefaultUserServer {
+		info.Sender = chatJID
+	} else if webMsg.GetParticipant() != "" {
+		info.Sender, err = types.ParseJID(webMsg.GetParticipant())
+	} else if webMsg.GetKey().GetParticipant() != "" {
+		info.Sender, err = types.ParseJID(webMsg.GetKey().GetParticipant())
+	} else {
+		return nil, fmt.Errorf("couldn't find sender of message %s", info.ID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse sender of message %s: %v", info.ID, err)
+	}
+	evt := &events.Message{
+		RawMessage: webMsg.GetMessage(),
+		Info:       info,
+	}
+	evt.UnwrapRaw()
+	return evt, nil
 }

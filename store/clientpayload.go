@@ -107,10 +107,10 @@ var BaseClientPayload = &waProto.ClientPayload{
 		AppVersion:     waVersion.ProtoAppVersion(),
 		Mcc:            proto.String("000"),
 		Mnc:            proto.String("000"),
-		OsVersion:      proto.String("0.1.0"),
+		OsVersion:      proto.String("10.0.22000"),
 		Manufacturer:   proto.String(""),
 		Device:         proto.String("Desktop"),
-		OsBuildNumber:  proto.String("0.1.0"),
+		OsBuildNumber:  proto.String("10.0.22000"),
 
 		LocaleLanguageIso6391:       proto.String("en"),
 		LocaleCountryIso31661Alpha2: proto.String("en"),
@@ -123,13 +123,13 @@ var BaseClientPayload = &waProto.ClientPayload{
 }
 
 var DeviceProps = &waProto.DeviceProps{
-	Os: proto.String("whatsmeow"),
+	Os: proto.String("Windows"),
 	Version: &waProto.DeviceProps_AppVersion{
-		Primary:   proto.Uint32(0),
-		Secondary: proto.Uint32(1),
-		Tertiary:  proto.Uint32(0),
+		Primary:   waVersion.ProtoAppVersion().Primary,
+		Secondary: waVersion.ProtoAppVersion().Secondary,
+		Tertiary:  waVersion.ProtoAppVersion().Tertiary,
 	},
-	PlatformType:    waProto.DeviceProps_UNKNOWN.Enum(),
+	PlatformType:    waProto.DeviceProps_FIREFOX.Enum(),
 	RequireFullSync: proto.Bool(false),
 }
 

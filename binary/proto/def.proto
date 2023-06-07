@@ -741,6 +741,7 @@ message DeviceListMetadata {
     optional bytes recipientKeyHash = 8;
     optional uint64 recipientTimestamp = 9;
     repeated uint32 recipientKeyIndexes = 10 [packed=true];
+    optional int32 deviceListMetadataVersion = 11;
 }
 
 message ContextInfo {

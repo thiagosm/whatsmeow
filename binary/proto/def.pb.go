@@ -8662,6 +8662,7 @@ type DeviceListMetadata struct {
 	RecipientKeyHash    []byte   `protobuf:"bytes,8,opt,name=recipientKeyHash" json:"recipientKeyHash,omitempty"`
 	RecipientTimestamp  *uint64  `protobuf:"varint,9,opt,name=recipientTimestamp" json:"recipientTimestamp,omitempty"`
 	RecipientKeyIndexes []uint32 `protobuf:"varint,10,rep,packed,name=recipientKeyIndexes" json:"recipientKeyIndexes,omitempty"`
+	DeviceListMetadataVersion *int32 `protobuf:"varint,11,rep,packed,name=deviceListMetadataVersion" json:"deviceListMetadataVersion,omitempty"`
 }
 
 func (x *DeviceListMetadata) Reset() {
@@ -8736,6 +8737,13 @@ func (x *DeviceListMetadata) GetRecipientKeyIndexes() []uint32 {
 		return x.RecipientKeyIndexes
 	}
 	return nil
+}
+
+func (x *DeviceListMetadata) GetDeviceListMetadataVersion() int32 {
+	if x != nil {
+		return *x.DeviceListMetadataVersion
+	}
+	return 0
 }
 
 type ContextInfo struct {

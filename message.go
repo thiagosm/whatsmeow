@@ -111,6 +111,7 @@ func (cli *Client) parseMessageInfo(node *waBinary.Node) (*types.MessageInfo, er
 	info.PushName = ag.OptionalString("notify")
 	info.Category = ag.OptionalString("category")
 	info.Type = ag.OptionalString("type")
+	info.Edit = types.EditAttribute(ag.OptionalString("edit"))
 	if !ag.OK() {
 		return nil, ag.Error()
 	}
@@ -149,9 +150,19 @@ func (cli *Client) handlePlaintextMessage(info *types.MessageInfo, node *waBinar
 		cli.Log.Warnf("Error unmarshaling plaintext message from %s: %v", info.SourceString(), err)
 		return
 	}
-	cli.handleDecryptedMessage(info, &msg, 0)
-	// TODO do these need receipts?
-	//go cli.sendMessageReceipt(info)
+	cli.storeMessageSecret(info, &msg)
+	evt := &events.Message{
+		Info:       *info,
+		RawMessage: &msg,
+	}
+	meta, ok := node.GetOptionalChildByTag("meta")
+	if ok {
+		evt.NewsletterMeta = &events.NewsletterMessageMeta{
+			EditTS:     meta.AttrGetter().UnixMilli("msg_edit_t"),
+			OriginalTS: meta.AttrGetter().UnixTime("original_msg_t"),
+		}
+	}
+	cli.dispatchEvent(evt.UnwrapRaw())
 	return
 }
 
@@ -427,7 +438,7 @@ func (cli *Client) handleProtocolMessage(info *types.MessageInfo, msg *waProto.M
 		if atomic.CompareAndSwapUint32(&cli.historySyncHandlerStarted, 0, 1) {
 			go cli.handleHistorySyncNotificationLoop()
 		}
-		go cli.sendProtocolMessageReceipt(info.ID, "hist_sync")
+		go cli.sendProtocolMessageReceipt(info.ID, types.ReceiptTypeHistorySync)
 	}
 
 	if protoMsg.GetPeerDataOperationRequestResponseMessage().GetPeerDataOperationRequestType() == waProto.PeerDataOperationRequestType_PLACEHOLDER_MESSAGE_RESEND {
@@ -439,7 +450,7 @@ func (cli *Client) handleProtocolMessage(info *types.MessageInfo, msg *waProto.M
 	}
 
 	if info.Category == "peer" {
-		go cli.sendProtocolMessageReceipt(info.ID, "peer_msg")
+		go cli.sendProtocolMessageReceipt(info.ID, types.ReceiptTypePeerMsg)
 	}
 }
 
@@ -460,6 +471,10 @@ func (cli *Client) processProtocolParts(info *types.MessageInfo, msg *waProto.Me
 	if msg.GetProtocolMessage() != nil {
 		cli.handleProtocolMessage(info, msg)
 	}
+	cli.storeMessageSecret(info, msg)
+}
+
+func (cli *Client) storeMessageSecret(info *types.MessageInfo, msg *waProto.Message) {
 	if msgSecret := msg.GetMessageContextInfo().GetMessageSecret(); len(msgSecret) > 0 {
 		err := cli.Store.MsgSecrets.PutMessageSecret(info.Chat, info.Sender, info.ID, msgSecret)
 		if err != nil {
@@ -544,7 +559,7 @@ func (cli *Client) handleDecryptedMessage(info *types.MessageInfo, msg *waProto.
 	cli.dispatchEvent(evt.UnwrapRaw())
 }
 
-func (cli *Client) sendProtocolMessageReceipt(id, msgType string) {
+func (cli *Client) sendProtocolMessageReceipt(id types.MessageID, msgType types.ReceiptType) {
 	clientID := cli.Store.ID
 	if len(id) == 0 || clientID == nil {
 		return
@@ -552,8 +567,8 @@ func (cli *Client) sendProtocolMessageReceipt(id, msgType string) {
 	err := cli.sendNode(waBinary.Node{
 		Tag: "receipt",
 		Attrs: waBinary.Attrs{
-			"id":   id,
-			"type": msgType,
+			"id":   string(id),
+			"type": string(msgType),
 			"to":   types.NewJID(clientID.User, types.LegacyUserServer),
 		},
 		Content: nil,

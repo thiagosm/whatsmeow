@@ -10019,13 +10019,6 @@ func (x *DeviceListMetadata) GetRecipientKeyIndexes() []uint32 {
 	return nil
 }
 
-func (x *DeviceListMetadata) GetDeviceListMetadataVersion() int32 {
-	if x != nil {
-		return *x.DeviceListMetadataVersion
-	}
-	return 0
-}
-
 type ContextInfo struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

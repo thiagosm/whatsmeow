@@ -153,7 +153,7 @@ func (device *Device) getRegistrationPayload() *waProto.ClientPayload {
 		ERegid:      regID,
 		EKeytype:    []byte{ecc.DjbType},
 		EIdent:      device.IdentityKey.Pub[:],
-		ESkeyId:     preKeyID[1:],
+		ESkeyID:     preKeyID[1:],
 		ESkeyVal:    device.SignedPreKey.Pub[:],
 		ESkeySig:    device.SignedPreKey.Signature[:],
 		BuildHash:   waVersionHash[:],
